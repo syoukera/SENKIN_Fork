@@ -1,20 +1,11 @@
-gfortran -c ckinterp.f
+gfortran -ffixed-form -ffixed-line-length-none -c ckinterp.f
+gfortran -ffixed-form -ffixed-line-length-none -c cklib.f
+gfortran -ffixed-form -ffixed-line-length-none -c dasac.f
+gfortran -ffixed-form -ffixed-line-length-none -c driv.f
+gfortran -ffixed-form -ffixed-line-length-none -c senkin.f
 
-gfortran -c cklib.f
-
-gfortran -c dasac.f
-
-gfortran -c driv.f
-
-gfortran -c senkin.f
-
-
-
-gfortran -o ckinterpe ckinterp.o
-
-
-
-gfortran -o senkine senkin.o driv.o cklib.o dasac.o
+gfortran -ffixed-form -ffixed-line-length-none -o ckinterpe ckinterp.o
+gfortran -ffixed-form -ffixed-line-length-none -o senkine senkin.o driv.o cklib.o dasac.o
 
 
 

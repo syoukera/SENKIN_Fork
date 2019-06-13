@@ -1,5 +1,6 @@
       SUBROUTINE SENKIN (LIN, LOUT, LINKCK, LSAVE, LIGN, LREST,
-     1                   LR, R, LI, I, LC, C)
+     1                   LR, R, LI, I, LC, C,
+     2                   RWORK_HOLD, IWORK_HOLD, CWORK_HOLD)
 C
 C*****precision > double
       IMPLICIT DOUBLE PRECISION (A-H, O-Z), INTEGER (I-N)
@@ -46,6 +47,8 @@ C     2.  Call CKRDEX instead of CKA to perturb reaction constant.
 C
       DIMENSION R(*), I(*)
       CHARACTER C(*)*(*)
+      DIMENSION IWORK_HOLD(*), RWORK_HOLD(*)
+      CHARACTER CWORK_HOLD(*)*(*)
 C
       LOGICAL LSENS
 C
@@ -153,7 +156,8 @@ C
      1            LINKCK, LIN, LOUT, LSAVE, LIGN, LREST, LSENS,
      2            LIDAS, LRDAS, LSDAS, I(NIDAS), R(NRDAS), R(NSDAS),
      3            R(NRPAR), I(NIPAR), R(NZ), R(NZP), R(NRTOL),
-     4            R(NATOL), R(NXMOL), C(NKSYM), C(IPCCK))
+     4            R(NATOL), R(NXMOL), C(NKSYM), C(IPCCK),
+     5            RWORK_HOLD, IWORK_HOLD, CWORK_HOLD)
 C
       STOP
       END
@@ -164,7 +168,8 @@ C
      1                  LENCCK, LINKCK, LIN, LOUT, LSAVE, LIGN, LREST,
      2                  LSENS, LIDAS, LRDAS, LSDAS, IDWORK, DWORK,
      3                  SDWORK, RPAR, IPAR, Z, ZP, RTOL, ATOL, XMOL,
-     5                  KSYM, CCKWRK)
+     4                  KSYM, CCKWRK,
+     5                  RWORK_HOLD, IWORK_HOLD, CWORK_HOLD)
 C
 C*****precision > double
       IMPLICIT DOUBLE PRECISION (A-H, O-Z), INTEGER (I-N)
@@ -176,6 +181,9 @@ C
       DIMENSION Z(*), ZP(*), XMOL(*), DWORK(*), IDWORK(*), SDWORK(*),
      1          RTOL(*), ATOL(*), RPAR(*), IPAR(*), TOLS(4)
       CHARACTER*(*) CCKWRK(*), KSYM(*)
+
+      DIMENSION IWORK_HOLD(*), RWORK_HOLD(*)
+      CHARACTER CWORK_HOLD(*)*(*)
 C
       EXTERNAL RCONP, RCONV, RCONT, RVOLT, RTEMP
 C
@@ -362,7 +370,8 @@ C
          CALL SENS13 (RCONP, ICASE, NSYS, KK, II, DELT, TSTOP, TIM,
      1                PATM, TLIM, LOUT, LSAVE, LIGN, LSENS, LIDAS,
      2                LRDAS, LSDAS, Z, ZP, DWORK, IDWORK, SDWORK, RPAR,
-     3                IPAR, ATOL, RTOL, TOLS, XMOL, KSYM)
+     3                IPAR, ATOL, RTOL, TOLS, XMOL, KSYM, 1,
+     4                RWORK_HOLD, IWORK_HOLD, CWORK_HOLD)
       ELSEIF (ICASE .EQ. 2) THEN
          CALL SENS13 (RCONV, ICASE, NSYS, KK, II, DELT, TSTOP, TIM,
      1                PATM, TLIM, LOUT, LSAVE, LIGN, LSENS, LIDAS,
@@ -403,10 +412,12 @@ C
 C
 C----------------------------------------------------------------------
 C
-      SUBROUTINE SENS13 (RES, ICASE, NSYS, KK, II, DTOUT, TSTOP, TIM,
-     1                   PATM, TLIM, LOUT, LSAVE, LIGN, LSENS, LIW,
-     2                   LRW, LSW, Z, ZP, ELWRK, IELWRK, SWORK, RPAR,
-     3                   IPAR, ATOL, RTOL, TOLS, XMOL, KSYM)
+      RECURSIVE SUBROUTINE SENS13 (RES, ICASE, NSYS, KK, II, DTOUT,
+     1                  TSTOP, TIM, PATM, TLIM, LOUT, LSAVE, LIGN, 
+     2                  LSENS, LIW, LRW, LSW, Z, ZP, ELWRK, IELWRK,
+     3                  SWORK, RPAR, IPAR, ATOL, RTOL, TOLS, XMOL, KSYM, 
+     4                  LEVEL_CALLSENS,
+     6                  RWORK_HOLD, IWORK_HOLD, CWORK_HOLD)
 C
 C  This module directs the integration for cases 1-3, where temperature
 C  is not known and the energy equation is included.
@@ -421,6 +432,10 @@ C
       DIMENSION Z(NSYS,*), ZP(NSYS,*), ELWRK(*), IELWRK(*), SWORK(*),
      1          ISEN(5), RPAR(*), IPAR(*), INFO(15), RTOL(NSYS,*),
      2          ATOL(NSYS,*), TOLS(*), XMOL(*)
+
+      DIMENSION IWORK_HOLD(*), RWORK_HOLD(*)
+      CHARACTER CWORK_HOLD(*)*(*)
+      LOGICAL :: CALL_BACK = .FALSE.
 C
       EXTERNAL RES, DRES
 C
@@ -430,6 +445,7 @@ C
       COMMON /RES1/ P
 C
       DATA ISEN /5*0/, INFO /15*0/, DTLIM / 400. /, NOSAV /1/
+      TFORK = 1d-2
 C
 C       SET PARAMETERS FOR DASAC
 C
@@ -552,11 +568,55 @@ C
          TIGN = TIMOLD + DT *(TLIM-TOLD)/(T-TOLD)
          IFLG = 1
       ENDIF
+
+C----------------------      20190613      ----------------------C
+C------------------  ADDED BY Akira Shioyoke  -------------------C
+C
+C          FORK SENS13
+C
+      IF (TIM .GE. TFORK) THEN
+            IF (LEVEL_CALLSENS .EQ. 1) THEN
+
+C                 HOLD OLD VALUE
+                  DO i = 1, LITOT
+                        IWORK_HOLD(i) = IPAR(i)
+                  ENDDO
+                  DO i = 1, LRTOT
+                        RWORK_HOLD(i) = RPAR(i)
+                  ENDDO
+                  ! DO i = 1, LCTOT
+                  !       CWORK_HOLD(i) = CCKWRK(i)
+                  ! ENDDO
+
+C                 FORK TO BRANCE 
+                  WRITE(LOUT, '(A)') ' FORK SIMLATION BRANCH '
+                  WRITE(LIGN, '(A)') ' FORK SIMLATION BRANCH '
+                  CALL SENS13 (RES, ICASE, NSYS, KK, II, DTOUT, TSTOP, 
+     1                         TIM, PATM, TLIM, LOUT, LSAVE, LIGN, 
+     2                         LSENS, LIW, LRW, LSW, Z, ZP, ELWRK, 
+     3                         IELWRK, SWORK, RPAR, IPAR, ATOL, RTOL, 
+     4                         TOLS, XMOL, KSYM, LEVEL_CALLSENS+1,
+     5                         RWORK_HOLD, IWORK_HOLD, CWORK_HOLD)
+
+                  CALL_BACK = .TRUE.
+            ENDIF
+            TFORK = 1D15
+      ENDIF
+
+C     RETURN HOLD VALUE TO WORK ARRAY
+      IF (CALL_BACK) THEN
+            DO i = 1, LITOT
+                  IPAR(i) = IWORK_HOLD(i)
+            ENDDO
+            DO i = 1, LRTOT
+                  RPAR(i) = RWORK_HOLD(i)
+            ENDDO
+      ENDIF
+C----------------------      20190613      ----------------------C
+
 C
 C           PRINT OUT SOLUTION
 C
-
-
       IF (TIM .GE. TPRINT) THEN
          CALL TEXT13 (IPAR, KK, KSYM, LIGN, LOUT,
      1                P, PATM, RPAR, TIM, XMOL, Z)
